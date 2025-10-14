@@ -1,5 +1,7 @@
+// exam-stream-viewer/src/App.js
 import React, { useEffect, useRef, useState } from 'react';
 import './App.css';
+import { apiBase, wsBase } from './apiBase';
 
 function App() {
   const [connected, setConnected] = useState(false);
@@ -7,58 +9,77 @@ function App() {
   const [darkMode, setDarkMode] = useState(true);
   const [serverHealth, setServerHealth] = useState('🔴 Offline');
 
-  const [fps, setFps] = useState(0);                // ✅
-  const [lastAgeMs, setLastAgeMs] = useState(null); // ✅
+  const [fps, setFps] = useState(0);
+  const [lastAgeMs, setLastAgeMs] = useState(null);
 
   const imgRef = useRef(null);
   const notesRef = useRef(null);
 
-  // WebSocket (with reconnect)
+  // --- WebSocket (with reconnect) ---
   useEffect(() => {
     let ws;
     let reconnectTimer;
 
     const connect = () => {
-      ws = new WebSocket('ws://localhost:3000');
+      ws = new WebSocket(`${wsBase()}/ws`);
+      ws.binaryType = 'arraybuffer';
+
       ws.onopen = () => setConnected(true);
+
       ws.onmessage = (event) => {
         const blob = new Blob([event.data], { type: 'image/jpeg' });
         const url = URL.createObjectURL(blob);
         if (imgRef.current?.src) URL.revokeObjectURL(imgRef.current.src);
         if (imgRef.current) imgRef.current.src = url;
       };
+
       ws.onclose = () => {
         setConnected(false);
-        reconnectTimer = setTimeout(connect, 1000); // ✅ auto-reconnect
+        reconnectTimer = setTimeout(connect, 1000); // auto-reconnect
+      };
+
+      ws.onerror = () => {
+        try { ws.close(); } catch {}
       };
     };
+
     connect();
-    return () => clearTimeout(reconnectTimer);
+    return () => {
+      clearTimeout(reconnectTimer);
+      try { ws && ws.close(); } catch {}
+    };
   }, []);
 
-  // Health + stats polling
+  // --- Health + stats polling ---
   useEffect(() => {
     const poll = async () => {
       try {
-        const h = await fetch('http://localhost:3000/health', { method: 'HEAD' });
+        const h = await fetch(`${apiBase()}/health`, { method: 'HEAD' });
         setServerHealth(h.ok ? '🟢 Fast' : '🔴 Offline');
       } catch {
         setServerHealth('🔴 Offline');
       }
 
       try {
-        const r = await fetch('http://localhost:3000/stats');
-        const s = await r.json();
-        setFps(s.fps || 0);
-        setLastAgeMs(s.lastFrameAt ? (Date.now() - s.lastFrameAt) : null);
-      } catch {}
+        const r = await fetch(`${apiBase()}/stats`);
+        if (r.ok) {
+          const s = await r.json();
+          setFps(s.fps || 0);
+          setLastAgeMs(s.lastFrameAt ? (Date.now() - s.lastFrameAt) : null);
+        }
+      } catch {
+        // ignore
+      }
     };
+
     poll();
     const id = setInterval(poll, 1000);
     return () => clearInterval(id);
   }, []);
 
-  const copyNotes = () => navigator.clipboard.writeText(notesRef.current?.value || '');
+  const copyNotes = () =>
+    navigator.clipboard.writeText(notesRef.current?.value || '');
+
   const downloadSnapshot = () => {
     const link = document.createElement('a');
     link.download = `snapshot-${Date.now()}.jpg`;
@@ -81,10 +102,15 @@ function App() {
       </header>
 
       <div className="status-bar">
-        <span>Status: <strong className={connected ? 'live' : 'offline'}>{connected ? 'Live' : 'Offline'}</strong></span>
+        <span>
+          Status:{' '}
+          <strong className={connected ? 'live' : 'offline'}>
+            {connected ? 'Live' : 'Offline'}
+          </strong>
+        </span>
         <span>Server: {serverHealth}</span>
-        <span>FPS: {fps}</span>                      {/* ✅ */}
-        <span>Age: {lastAgeMs == null ? '-' : `${lastAgeMs}ms`}</span> {/* ✅ */}
+        <span>FPS: {fps}</span>
+        <span>Age: {lastAgeMs == null ? '-' : `${lastAgeMs}ms`}</span>
         <button onClick={downloadSnapshot}>Snapshot</button>
       </div>
 
