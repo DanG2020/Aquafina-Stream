@@ -8,7 +8,7 @@ const { EventEmitter } = require('events');
 
 const MAX_FRAME_BYTES = Number(process.env.MAX_FRAME_BYTES || 4_000_000);
 
-// ----- create app FIRST (was after app.listen before) -----
+// ----- create app FIRST -----
 const app = express();
 app.disable('x-powered-by');
 app.use(cors());
@@ -21,17 +21,7 @@ const INDEX_HTML = path.join(PUBLIC_DIR, 'index.html');
 // Serve static assets, but NOT the index automatically (we’ll send it ourselves no-cache)
 app.use(express.static(PUBLIC_DIR, { index: false, maxAge: '1y', etag: false }));
 
-// Always serve fresh HTML for UI routes
-function sendIndexNoCache(_req, res) {
-  res.set('Cache-Control', 'no-store');
-  res.sendFile(INDEX_HTML);
-}
-app.get('/', sendIndexNoCache);
-app.get('/watch', sendIndexNoCache);
-// (optional) catch-all UI routes; exclude our API endpoints
-app.get(/^\/(?!health|stats|upload|stream|ws).*/, sendIndexNoCache);
-
-// ---------- Health & stats ----------
+// ---------- Health & stats (MUST be before any catch-all) ----------
 let lastFrameAt = 0;
 let framesThisSecond = 0;
 let fps = 0;
@@ -42,6 +32,17 @@ const clients = new Set();
 
 app.head('/health', (_req, res) => res.sendStatus(200));
 app.get('/stats', (_req, res) => res.json({ lastFrameAt, fps, viewers: clients.size }));
+
+// ---------- UI routes ----------
+function sendIndexNoCache(_req, res) {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(INDEX_HTML);
+}
+app.get('/', sendIndexNoCache);
+app.get('/watch', sendIndexNoCache);
+
+// catch-all UI routes; exclude our API endpoints
+app.get(/^\/(?!health|stats|upload|stream|ws).*/, sendIndexNoCache);
 
 // ---------- HTTP server & tuning ----------
 const server = http.createServer(app);
@@ -145,7 +146,7 @@ function handleFrame(buffer) {
   }
 }
 
-// --------- SINGLE listener here (bind all interfaces for deploy) ---------
+// --------- SINGLE listener (bind all interfaces for deploy) ---------
 const PORT = Number(process.env.PORT || 3000);
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on ${PORT}`);
