@@ -31,7 +31,20 @@ setInterval(() => { fps = framesThisSecond; framesThisSecond = 0; }, 1000);
 const clients = new Set();
 
 app.head('/health', (_req, res) => res.sendStatus(200));
-app.get('/stats', (_req, res) => res.json({ lastFrameAt, fps, viewers: clients.size }));
+app.get('/stats', (_req, res) => {
+  const now = Date.now();
+  const activeMs = lastFrameAt ? (now - lastFrameAt) : null;
+  const active = activeMs != null && activeMs < 3000; // recent = last 3s
+  res.json({
+    lastFrameAt: lastFrameAt || null,
+    fps,
+    viewers: clients.size,
+    active,
+    ageMs: active ? activeMs : null,
+  });
+});
+
+
 
 // ---------- UI routes ----------
 function sendIndexNoCache(_req, res) {
@@ -95,6 +108,11 @@ app.get('/stream', (req, res) => {
 
 // ---------- Optimized raw-bytes upload ----------
 app.post('/upload', (req, res) => {
+
+  const REQUIRED = process.env.STREAM_KEY || null;
+  if (REQUIRED && req.headers['x-stream-key'] !== REQUIRED) {
+    return res.sendStatus(401);
+  }
   const lenHeader = req.headers['content-length'];
   const len = lenHeader ? Number(lenHeader) : 0;
 

@@ -65,17 +65,25 @@ function App() {
         if (r.ok) {
           const s = await r.json();
           setFps(s.fps || 0);
-          setLastAgeMs(s.lastFrameAt ? (Date.now() - s.lastFrameAt) : null);
+          // If not active, show '-' instead of a huge age
+          setLastAgeMs(s.active ? s.ageMs : null);
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     };
 
     poll();
     const id = setInterval(poll, 1000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (lastAgeMs != null && lastAgeMs > 10000 && imgRef.current) {
+        imgRef.current.removeAttribute('src'); // remove stale frame
+      }
+    }, 2000);
+    return () => clearInterval(t);
+  }, [lastAgeMs]);
 
   const copyNotes = () =>
     navigator.clipboard.writeText(notesRef.current?.value || '');
